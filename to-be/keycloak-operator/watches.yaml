@@ -1,0 +1,6 @@
+# Use the 'create api' subcommand to add watches to this file.
+- group: demo.example.com
+  version: v1alpha1
+  kind: Keycloak
+  chart: helm-charts/keycloak
+#+kubebuilder:scaffold:watch
