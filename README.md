@@ -22,6 +22,7 @@
     - [Install Grafana](#install-grafana)
       - [Istio Gateway 를 이용한 Grafana 노출](#istio-gateway-를-이용한-grafana-노출)
       - [Grafana 관련 oauth2-proxy 설정](#grafana-관련-oauth2-proxy-설정)
+  - [TO-BE](#to-be)
 
 ----
 
@@ -305,6 +306,8 @@ extraArgs:
   # # oidc-jwks-url: <JWKS_URL> # this is accessed by proxy in-mesh - http  
   # skip-oidc-discovery: true
   # # redirect-url: <REDIRECT_URL>    
+
+authenticatedEmailsFile
 ```
 
 - `openssl rand -base64 32 | head -c 32 | base64` 명령으로 Cookie Secret 값 생성
@@ -678,3 +681,11 @@ spec:
     - operation:
         paths: ["/grafana"]  
 ```
+
+## TO-BE
+
+- Istio 는 기존 Operator 를 활용하자.
+  - https://istio.io/latest/docs/setup/install/operator/
+- Oidc Operator 개발 (Go 기반)
+- Keycloak Operator 개발 (Helm Chart 기반)
+- Oidc 에서 Keycloak 를 사용하는 형태로 개발
