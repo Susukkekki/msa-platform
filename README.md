@@ -9,11 +9,15 @@
       - [Install istioctl](#install-istioctl)
       - [Deploy the Istio operator](#deploy-the-istio-operator)
       - [Install Istio with the operator](#install-istio-with-the-operator)
+      - [Istio Gateway 생성하기](#istio-gateway-생성하기)
     - [Install Keycloak with Helm](#install-keycloak-with-helm)
+      - [Istio Gateway 를 이용한 Keycloak 노출](#istio-gateway-를-이용한-keycloak-노출)
+      - [Keycloak Client 생성하기](#keycloak-client-생성하기)
     - [Install oauth2-proxy](#install-oauth2-proxy)
       - [Istio Configuration](#istio-configuration)
         - [By using istio operator](#by-using-istio-operator)
         - [~~By using istioctl~~](#by-using-istioctl)
+      - [oauth2-proxy VirtualService 만들기](#oauth2-proxy-virtualservice-만들기)
     - [Install Prometheus](#install-prometheus)
     - [Install Grafana](#install-grafana)
       - [Istio Gateway 를 이용한 Grafana 노출](#istio-gateway-를-이용한-grafana-노출)
@@ -111,6 +115,33 @@ istio-system     svclb-istio-ingressgateway-kxlnr          3/3     Running   0  
 istio-system     istio-ingressgateway-8dbb57f65-2qx6z      1/1     Running   0          4h34m
 ```
 
+#### Istio Gateway 생성하기
+
+> 여기서 생성한 Gateway `ingress-gateway` 를 다른 곳에서 사용할 것이다. 
+
+```sh
+vi ingress-gateway.yaml
+```
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: ingress-gateway
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+    tls:
+      httpsRedirect: false
+```
+
 ### Install Keycloak with Helm
 
 > - https://github.com/codecentric/helm-charts/tree/master/charts/keycloak (GDC에서 사용)
@@ -121,7 +152,24 @@ helm repo add codecentric https://codecentric.github.io/helm-charts
 ```
 
 ```sh
-helm install keycloak codecentric/keycloak
+vi keycloak-values.yaml
+```
+
+```yaml
+contextPath: auth
+
+extraEnv: |
+  - name: KEYCLOAK_USER
+    value: admin
+  - name: KEYCLOAK_PASSWORD
+    value: admin
+```
+
+> - contextPath : `/auth` 로 서비스. istio ingress-gateway 에서 '/auth'로 포워딩하기 위함.
+> - [Creating a Keycloak Admin User](https://github.com/codecentric/helm-charts/issues/169)
+
+```sh
+helm install keycloak codecentric/keycloak --values keycloak-values.yaml
 ```
 
 keycloak 가 모두 실행 된 후에 아래 명령으로 port-forwarding 을 통해서 접근할 수 있다.
@@ -135,62 +183,61 @@ kubectl --namespace default port-forward "$POD_NAME" 8080
 > - 음..근데 id / password 가 뭐지?
 > - 접속해 보면 홈에서 계정 생성을 바로 할 수 있다. 여기서 생성하면 로그인이 가능하다.
 
-keycloak 로의 ingress 설정
+#### Istio Gateway 를 이용한 Keycloak 노출
 
-- https://istio.io/latest/docs/reference/config/networking/gateway/
+```sh
+vi keycloak-vs.yaml
+```
 
 ```yaml
 apiVersion: networking.istio.io/v1alpha3
-kind: Gateway
+kind: VirtualService
 metadata:
-  name: keycloak-gateway
-  # namespace: some-config-namespace
+  name: keycloak
 spec:
-  selector:
-    app: my-gateway-controller
-  servers:
-  - port:
-      number: 80
-      name: http
-      protocol: HTTP
-    hosts:
-    - uk.bookinfo.com
-    - eu.bookinfo.com
-    tls:
-      httpsRedirect: true # sends 301 redirect for http requests
-  - port:
-      number: 443
-      name: https-443
-      protocol: HTTPS
-    hosts:
-    - uk.bookinfo.com
-    - eu.bookinfo.com
-    tls:
-      mode: SIMPLE # enables HTTPS on this port
-      serverCertificate: /etc/certs/servercert.pem
-      privateKey: /etc/certs/privatekey.pem
-  - port:
-      number: 9443
-      name: https-9443
-      protocol: HTTPS
-    hosts:
-    - "bookinfo-namespace/*.bookinfo.com"
-    tls:
-      mode: SIMPLE # enables HTTPS on this port
-      credentialName: bookinfo-secret # fetches certs from Kubernetes secret
-  - port:
-      number: 9080
-      name: http-wildcard
-      protocol: HTTP
-    hosts:
-    - "*"
-  - port:
-      number: 2379 # to expose internal service via external port 2379
-      name: mongo
-      protocol: MONGO
-    hosts:
-    - "*"
+  hosts:
+  - "*"
+  # - localhost
+  gateways:
+  - ingress-gateway
+  http:
+  - match:
+    - uri:
+        exact: /auth
+    - uri:
+        prefix: /auth
+    route:
+    - destination:
+        host: keycloak-http.default.svc.cluster.local
+        port:
+          number: 80
 ```
+
+#### Keycloak Client 생성하기
+
+> 일단은 수동으로 생성해 본다.
+
+Add Client
+
+- Client ID : msa-platform
+- Client Protocol : openid-connect
+
+Fill in details as below:
+
+- `Base URL` : /realms/master/account
+- `Root URL` : http://172.19.50.111/auth
+  - URL의 ip 는 istio gateway 의 ip 이다.
+- `Valid Redirect URIs` : *
+  - `/realms/master/account/*` 로 입력하면 `Invalid parameter: redirect_uri` 에러 발생
+  - `Invalid parameter: redirect_uri` 에러는 Keycloak 의 Client 설정에서 `Valid Redirect URIs`에 `*`를 주면 동작은 하는데, 이건 Production 에서는 사용하면 안된다고 한다. [\[참고\]](https://stackoverflow.com/questions/45352880/keycloak-invalid-parameter-redirect-uri)
+  - ~~전체 URL  `Root URL` + `Valid Redirect URIs`로 `http://172.19.50.111/auth/realms/msa-patform/account/*` 의 형태로 동작한다.~~
+- `Access Type` : confidential
+
+After saving it, let's check the `Client Id and Secret` in the `Credentials` tab.
+
+![](.md/README.md/keycloak-clientid-secret.png)
+
+I'll use `msa-platform` as a Client ID and `cb34149d-3bb8-4d84-80a7-4e451fa6d708` as a Secret.
 
 ### Install oauth2-proxy
 
@@ -199,7 +246,71 @@ spec:
 
 ```sh
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
-helm install oauth2-proxy oauth2-proxy/oauth2-proxy
+```
+
+```sh
+vi oauth2-proxy-values.yaml
+```
+
+```yaml
+config:
+  clientID: msa-platform
+  clientSecret: 89714ada-3894-4581-aea6-3d1e80174b24
+
+service: 
+  portNumber: 4180
+
+extraArgs: 
+  provider: oidc
+  provider-display-name: "Keycloak"
+  oidc-issuer-url: http://172.19.50.111/auth/realms/master
+  login-url: http://172.19.50.111/auth/realms/master/protocol/openid-connect/auth
+  redeem-url: http://172.19.50.111/auth/realms/master/protocol/openid-connect/token
+  validate-url: http://172.19.50.111/auth/realms/master/protocol/openid-connect/userinfo
+  redirect-url: http://172.19.50.111/oauth2/callback
+  scope: "openid profile email"
+  insecure-oidc-allow-unverified-email: true
+  email-domain: "*"
+  cookie-secure: false
+  cookie-secret: "UHJhU0lGQXNLN2J0dzFOWUlYYXFITTRKRC8rUHRvME4="
+  # scope: "openid email"
+  # upstream: static://200
+  # insecure-oidc-allow-unverified-email: true
+  # email-domain: "*"
+  cookie-secure: false
+  pass-user-headers: true
+  pass-authorization-header: true # pass OIDC IDToken to upstream via Authorization Bearer header
+  set-authorization-header: true # Authorization: Bearer <JWT>
+  pass-basic-auth: false
+  pass-access-token: true
+  # provider-display-name: Keycloak
+  # cookie-expire: 5m  
+  standard-logging: true
+  auth-logging: true
+  request-logging: true
+  skip-provider-button: true
+  session-store-type: cookie
+  # redirect-url: "http://172.19.50.111/oauth2/callback"
+  # # cookie-domain: "<COOKIE_DOMAIN>"
+  # # cookie-samesite: lax
+  # # cookie-refresh: 1h
+  # # cookie-expire: 4h
+  set-xauthrequest: true
+  reverse-proxy: true
+  pass-access-token: true # X-Auth-Request-Access-Token, must first enable --set-xauthrequest
+  pass-host-header: true # pass the request Host Header to upstream  
+  # scope: "openid email"  
+  # skip-provider-button: true
+  whitelist-domain: 172.19.50.111
+  # # oidc-jwks-url: <JWKS_URL> # this is accessed by proxy in-mesh - http  
+  # skip-oidc-discovery: true
+  # # redirect-url: <REDIRECT_URL>    
+```
+
+- `openssl rand -base64 32 | head -c 32 | base64` 명령으로 Cookie Secret 값 생성
+
+```sh
+helm install oauth2-proxy oauth2-proxy/oauth2-proxy --values oauth2-proxy-values.yaml
 ```
 
 아래는 설치 시 로그
@@ -216,6 +327,9 @@ To verify that oauth2-proxy has started, run:
 
   kubectl --namespace=default get pods -l "app=oauth2-proxy"
 ```
+
+- http://172.19.50.111/auth/realms/master/.well-known/openid-configuration 의 주소를 접속하면 여러 정보가 나온다.
+- `Invalid parameter: redirect_uri` 에러는 Keycloak 의 Client 설정에서 `Valid Redirect URIs`에 `*`를 주면 동작은 하는데, 이건 Production 에서는 사용하면 안된다고 한다. [\[참고\]](https://stackoverflow.com/questions/45352880/keycloak-invalid-parameter-redirect-uri)
 
 #### Istio Configuration
 
@@ -276,6 +390,41 @@ meshConfig:
 
 ```sh
 istioctl install -f updated-profile.yaml
+```
+
+#### oauth2-proxy VirtualService 만들기
+
+> :point_right: 이거 만들어 주지 않아서 동작안했는데 한참을 헤맴.
+> `kubectl logs $(kubectl -n istio-system get pods -l app=istiod -o jsonpath='{.items[0].metadata.name}') -c discovery -n istio-system` 명령으로 로그를 확인해 보니 다음과 같은 메시지를 보고 VirtualService 가 필요한지 확인함.
+>
+> ```diff
+>   2021-10-24T09:59:26.471240Z     info    ads     EDS: PUSH request for > node:istio-ingressgateway-8dbb57f65-2qx6z.istio-system resources:24 size:3.9kB empty:0 > cached:24/24
+> - 2021-10-24T09:59:54.885186Z     info    ads     Incremental push, service oauth2-proxy.> default.svc.cluster.local has no endpoints
+>   2021-10-24T09:59:54.994091Z     info    ads     Push debounce stable[162] 6: 100.5201ms > since last change, 130.1483ms since last push, full=true
+> ```
+>
+> :point_right: Grafana 의 경우 Grafana의 VirtualService 를 만들었더니 바로 접근이 가능했고 이를 지우니 oauth2-proxy 로 접근함.
+
+```sh
+vi oauth2-proxy-vs.yaml
+```
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: oauth2-proxy
+spec:
+  gateways:
+  - ingress-gateway
+  hosts:
+  - '*'
+  http:
+  - route:
+    - destination:
+        host: oauth2-proxy.default.svc.cluster.local
+        port:
+          number: 4180
 ```
 
 ### Install Prometheus
