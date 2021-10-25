@@ -684,8 +684,7 @@ spec:
 
 ## TO-BE
 
-- Istio 는 기존 Operator 를 활용하자.
-  - https://istio.io/latest/docs/setup/install/operator/
-- Oidc Operator 개발 (Go 기반)
-- Keycloak Operator 개발 (Helm Chart 기반)
+- [Istio 는 기존 Operator 를 활용](https://istio.io/latest/docs/setup/install/operator/)
+- [Oidc Operator 개발 (Go 기반)](to-be/oidc-operator)
+- [Keycloak Operator 개발 (Helm Chart 기반)](to-be/keycloak-operator)
 - Oidc 에서 Keycloak 를 사용하는 형태로 개발
