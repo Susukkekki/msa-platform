@@ -24,6 +24,7 @@
       - [Grafana 관련 oauth2-proxy 설정](#grafana-관련-oauth2-proxy-설정)
   - [TO-BE](#to-be)
     - [CRDs](#crds)
+    - [Create an Keycloak Operator from the scratch](#create-an-keycloak-operator-from-the-scratch)
 
 ----
 
@@ -733,3 +734,43 @@ kubectl get virtualservice
 ```sh
 kubectl get sts
 ```
+
+### Create an Keycloak Operator from the scratch
+
+> - https://sdk.operatorframework.io/docs/building-operators/helm/quickstart/
+
+```sh
+mkdir keycloak-operator 
+cd keycloak-operator 
+```
+
+```sh
+operator-sdk init --domain sds.com --plugins helm
+```
+
+```sh
+operator-sdk create api --group arch --version v1 --kind Keycloak --helm-chart=keycloak --helm-chart-repo=https://codecentric.github.io/helm-charts
+```
+
+```sh
+make docker-build
+```
+
+```sh
+make deploy
+```
+
+```sh
+kubectl edit deploy keycloak-operator-controller-manager -n keycloak-operator-system
+```
+
+```yaml
+        image: controller:latest
+        imagePullPolicy: Never
+```
+
+```sh
+kubectl apply -f config/samples/arch_v1_keycloak.yaml
+```
+
+pod 생성 완료
