@@ -29,6 +29,10 @@
   - [TO-BE](#to-be)
     - [CRDs](#crds)
     - [Use existing Keycloak Operator](#use-existing-keycloak-operator)
+    - [Realm 생성하기](#realm-생성하기)
+    - [Client 생성하기](#client-생성하기)
+    - [User 생성하기](#user-생성하기)
+    - [Istio Gateway 설정](#istio-gateway-설정)
     - [Create an Keycloak Operator from the scratch](#create-an-keycloak-operator-from-the-scratch)
 
 ----
@@ -808,6 +812,180 @@ cd keycloak-operator/
 
 ```sh
 make cluster/prepare
+```
+
+> 아래 예제 실행시 keycloak 라는 namespace 를 지정하지 않으면 default namespace 에서는 동작하지 않는다.
+
+<!-- default 네임스페이스에 대한 ServiceAccount 생성
+
+```sh
+kubectl apply -f deploy/service_account.yaml -n default
+``` -->
+
+```sh
+kubectl apply -f deploy/operator.yaml -n keycloak
+```
+
+```sh
+kubectl apply -f deploy/examples/keycloak/keycloak.yaml -n keycloak
+```
+
+yaml 내용은 다음과 같다.
+
+```yaml
+apiVersion: keycloak.org/v1alpha1
+kind: Keycloak
+metadata:
+  name: example-keycloak
+  labels:
+    app: sso
+spec:
+  instances: 1
+  extensions:
+    - https://github.com/aerogear/keycloak-metrics-spi/releases/download/1.0.4/keycloak-metrics-spi-1.0.4.jar
+  externalAccess:
+    enabled: True
+  podDisruptionBudget:
+    enabled: True
+```
+
+접속 정보 확인하기
+
+```sh
+$ kubectl get keycloak example-keycloak --output="jsonpath={.status.credentialSecret}" -n keycloak
+credential-example-keycloak
+```
+
+```sh
+$ kubectl get secret credential-example-keycloak -n keycloak -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}'
+ADMIN_PASSWORD: YJ3xbe3odGUUZg==
+ADMIN_USERNAME: admin
+```
+
+```sh
+kubectl port-forward svc/keycloak -n keycloak 5000:8443
+```
+
+접속하기 : https://localhost:5000
+
+### Realm 생성하기
+
+```yaml
+apiVersion: keycloak.org/v1alpha1
+kind: KeycloakRealm
+metadata:
+  namespace: keycloak
+  name: example-keycloakrealm
+  labels:
+    app: sso
+spec:
+  realm:
+    id: "sso"
+    realm: "sso"
+    enabled: True
+    displayName: "SSO"
+  instanceSelector:
+    matchLabels:
+      app: sso
+```
+
+### Client 생성하기
+
+```yaml
+apiVersion: keycloak.org/v1alpha1
+kind: KeycloakClient
+metadata:
+  namespace: keycloak
+  name: client-secret
+  labels:
+    app: sso
+spec:
+  realmSelector:
+    matchLabels:
+      app: sso
+  client:
+    clientId: client-secret
+    secret: client-secret
+    clientAuthenticatorType: client-secret
+    protocol: openid-connect
+```
+
+### User 생성하기
+
+```yaml
+apiVersion: keycloak.org/v1alpha1
+kind: KeycloakUser
+metadata:
+  name: example-realm-user-with-creds
+  labels:
+    app: sso
+spec:
+  user:
+    username: "creds_user"
+    firstName: "Creds"
+    lastName: "User"
+    email: "creds_user@redhat.com"
+    enabled: True
+    emailVerified: False
+    credentials:
+      - type: "password"
+        value: "12345"
+    realmRoles:
+      - "offline_access"
+    clientRoles:
+      account:
+        - "manage-account"
+      realm-management:
+        - "manage-users"
+  realmSelector:
+    matchLabels:
+      app: sso
+```
+
+### Istio Gateway 설정
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: ingress-gateway
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "localhost"
+    # - "*"
+    tls:
+      httpsRedirect: true
+```
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: keycloak
+spec:
+  hosts:
+  - "*"
+  # - localhost
+  gateways:
+  - ingress-gateway
+  http:
+  - match:
+    - uri:
+        exact: /auth
+    - uri:
+        prefix: /auth
+    route:
+    - destination:
+        host: keycloak.keycloak.svc.cluster.local
+        port:
+          number: 8443
 ```
 
 ### Create an Keycloak Operator from the scratch
