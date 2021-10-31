@@ -3,6 +3,10 @@
 ----
 
 - [MSA-Platform](#msa-platform)
+  - [K3s 구성하기](#k3s-구성하기)
+    - [설치하기](#설치하기)
+    - [삭제하기](#삭제하기)
+      - [도커 초기화하기](#도커-초기화하기)
   - [AS-IS](#as-is)
     - [~~Install Istio with Helm~~](#install-istio-with-helm)
     - [Install Istio with Operator](#install-istio-with-operator)
@@ -24,9 +28,64 @@
       - [Grafana 관련 oauth2-proxy 설정](#grafana-관련-oauth2-proxy-설정)
   - [TO-BE](#to-be)
     - [CRDs](#crds)
+    - [Use existing Keycloak Operator](#use-existing-keycloak-operator)
     - [Create an Keycloak Operator from the scratch](#create-an-keycloak-operator-from-the-scratch)
 
 ----
+
+## K3s 구성하기
+
+### 설치하기
+
+시스템 데몬 설치하기
+
+```sh
+git clone https://github.com/DamionGans/ubuntu-wsl2-systemd-script.git
+cd ubuntu-wsl2-systemd-script/
+bash ubuntu-wsl2-systemd-script.sh
+```
+
+Then exit the Ubuntu shell and try running systemctl
+
+```sh
+systemctl
+```
+
+도커 설치하기
+
+```sh
+curl https://get.docker.com | sh
+```
+
+k3s 설치하기
+
+```sh
+curl -sfL https://get.k3s.io | sh -s - --no-deploy traefik --docker --write-kubeconfig-mode 644
+```
+
+### 삭제하기
+
+```sh
+/usr/local/bin/k3s-uninstall.sh
+```
+
+#### 도커 초기화하기
+
+> k3s 삭제한 후 기존 도커에서 실행 중인 프로세스 종료시키고 도커 이미지 삭제  
+>
+> - https://typeofnan.dev/how-to-stop-all-docker-containers/
+
+실행중인 모든 프로세스 종료
+
+```sh
+docker kill $(docker ps -q)
+```
+
+모든 이미지 삭제
+
+```sh
+docker rmi -f $(docker images -q)
+```
 
 ## AS-IS
 
@@ -733,6 +792,22 @@ kubectl get virtualservice
 
 ```sh
 kubectl get sts
+```
+
+### Use existing Keycloak Operator
+
+> - https://github.com/keycloak/keycloak-operator
+
+```sh
+git clone https://github.com/keycloak/keycloak-operator.git
+```
+
+```sh
+cd keycloak-operator/
+```
+
+```sh
+make cluster/prepare
 ```
 
 ### Create an Keycloak Operator from the scratch
