@@ -23,6 +23,7 @@
       - [Istio Gateway 를 이용한 Grafana 노출](#istio-gateway-를-이용한-grafana-노출)
       - [Grafana 관련 oauth2-proxy 설정](#grafana-관련-oauth2-proxy-설정)
   - [TO-BE](#to-be)
+    - [CRDs](#crds)
 
 ----
 
@@ -690,3 +691,45 @@ spec:
 - Oidc 에서 Keycloak 를 사용하는 형태로 개발
 
 ![](.md/README.md/msa-design.png)
+
+### CRDs
+
+```yaml
+apiVersion: "arch.sds.com/v1"
+kind: Oidc
+metadata:
+  name: my-oidc
+spec:
+  type: default # default 는 생략가능하고, Keycloak 이다.
+  contextPath: /auth
+  ingress:
+    type: default # default 는 생략가능하고, Istio 이다.
+    enabled: true # default 는 false
+```
+
+```sh
+Kubectl get oidc
+```
+
+```yaml
+apiVersion: "arch.sds.com/v1"
+kind: ServiceMesh
+metadata:
+  name: my-service-mesh
+```
+
+```sh
+kubectl get servicemesh
+```
+
+```sh
+kubectl get gatgeway
+```
+
+```sh
+kubectl get virtualservice
+```
+
+```sh
+kubectl get sts
+```
